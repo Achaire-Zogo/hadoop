@@ -38,6 +38,22 @@ done
 echo ""
 ok "NameNode prêt."
 
+# Attendre qu'au moins 1 datanode soit actif
+info "Attente qu'un datanode soit disponible..."
+for i in $(seq 1 60); do
+    LIVE=$(docker exec $NAMENODE hdfs dfsadmin -report 2>/dev/null | grep -c "^Name:" || true)
+    if [ "$LIVE" -ge 1 ]; then
+        break
+    fi
+    sleep 3
+    echo -n "."
+done
+echo ""
+if [ "$LIVE" -lt 1 ]; then
+    error "Aucun datanode disponible après 3 minutes. Vérifiez 'docker logs datanode'."
+fi
+ok "${LIVE} datanode(s) actif(s)."
+
 # ─── Étape 1 : Créer les répertoires HDFS ───────────────────────────────────
 info "Création des répertoires HDFS..."
 docker exec $NAMENODE hdfs dfs -rm -r -f /user/root/input /user/root/output 2>/dev/null || true
@@ -48,7 +64,11 @@ ok "Répertoires HDFS créés."
 # ─── Étape 2 : Générer un large dataset de logs ─────────────────────────────
 info "Génération de 10 000 lignes de logs web..."
 
-docker exec $NAMENODE bash -c 'cat > /tmp/generate_logs.sh << '\''GENSCRIPT'\''
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TMP_SCRIPTS="${SCRIPT_DIR}/.tmp_scripts"
+mkdir -p "$TMP_SCRIPTS"
+
+cat > "$TMP_SCRIPTS/generate_logs.sh" << 'GENSCRIPT'
 #!/bin/bash
 PAGES=("/index.html" "/about.html" "/contact.html" "/products" "/services"
        "/blog" "/blog/post-1" "/blog/post-2" "/api/data" "/api/users"
@@ -58,7 +78,6 @@ PAGES=("/index.html" "/about.html" "/contact.html" "/products" "/services"
 
 METHODS=("GET" "GET" "GET" "GET" "POST" "PUT" "DELETE")
 
-# Pondération réaliste : 70% 200, 10% 301, 8% 404, 5% 403, 4% 500, 3% 502
 CODES=(200 200 200 200 200 200 200 301 404 403 500 502)
 
 SIZES=(128 256 512 1024 2048 4096 8192 16384)
@@ -77,10 +96,12 @@ for i in $(seq 1 10000); do
         "$IP" "$DAY" "$HOUR" "$MIN" "$SEC" "$METHOD" "$PAGE" "$CODE" "$SIZE"
 done
 GENSCRIPT
-chmod +x /tmp/generate_logs.sh
-bash /tmp/generate_logs.sh > /tmp/access.log'
+chmod +x "$TMP_SCRIPTS/generate_logs.sh"
 
-LINES=$(docker exec $NAMENODE wc -l < /tmp/access.log)
+docker cp "$TMP_SCRIPTS/generate_logs.sh" $NAMENODE:/tmp/generate_logs.sh
+docker exec $NAMENODE bash -c 'bash /tmp/generate_logs.sh > /tmp/access.log'
+
+LINES=$(docker exec $NAMENODE wc -l /tmp/access.log | awk '{print $1}')
 ok "Fichier généré : ${LINES} lignes de logs."
 
 # ─── Étape 3 : Charger dans HDFS ────────────────────────────────────────────
@@ -93,40 +114,41 @@ echo ""
 
 # ─── Étape 4 : Créer le Mapper ──────────────────────────────────────────────
 info "Création du script Mapper..."
-docker exec $NAMENODE bash -c 'cat > /tmp/mapper.sh << '\''MAPPER'\''
+cat > "$TMP_SCRIPTS/mapper.sh" << 'MAPPER'
 #!/bin/bash
 while read line; do
-    code=$(echo "$line" | awk "{print \$9}")
-    page=$(echo "$line" | awk "{print \$7}")
-    method=$(echo "$line" | awk "{print \$6}" | tr -d "\"")
-    size=$(echo "$line" | awk "{print \$10}")
-    hour=$(echo "$line" | awk "{print \$4}" | cut -d: -f2)
+    code=$(echo "$line" | awk '{print $9}')
+    page=$(echo "$line" | awk '{print $7}')
+    method=$(echo "$line" | awk '{print $6}' | tr -d '"')
+    size=$(echo "$line" | awk '{print $10}')
+    hour=$(echo "$line" | awk '{print $4}' | cut -d: -f2)
     if [ -n "$code" ] && [ "$code" -eq "$code" ] 2>/dev/null; then
-        echo -e "CODE\t${code}\t1"
-        echo -e "PAGE\t${page}\t1"
-        echo -e "METHOD\t${method}\t1"
-        echo -e "HOUR\t${hour}\t1"
-        echo -e "SIZE\t${code}\t${size}"
+        printf "CODE\t%s\t1\n" "$code"
+        printf "PAGE\t%s\t1\n" "$page"
+        printf "METHOD\t%s\t1\n" "$method"
+        printf "HOUR\t%s\t1\n" "$hour"
+        printf "SIZE\t%s\t%s\n" "$code" "$size"
     fi
 done
 MAPPER
-chmod +x /tmp/mapper.sh'
+chmod +x "$TMP_SCRIPTS/mapper.sh"
+docker cp "$TMP_SCRIPTS/mapper.sh" $NAMENODE:/tmp/mapper.sh
 ok "Mapper créé."
 
 # ─── Étape 5 : Créer le Reducer ─────────────────────────────────────────────
 info "Création du script Reducer..."
-docker exec $NAMENODE bash -c 'cat > /tmp/reducer.sh << '\''REDUCER'\''
+cat > "$TMP_SCRIPTS/reducer.sh" << 'REDUCER'
 #!/bin/bash
 current_key=""
 count=0
 
-while IFS=$'\''\t'\'' read -r category key val; do
+while IFS=$'\t' read -r category key val; do
     composite="${category}\t${key}"
     if [ "$composite" = "$current_key" ]; then
         count=$((count + val))
     else
         if [ -n "$current_key" ]; then
-            echo -e "${current_key}\t${count}"
+            printf "%s\t%s\n" "$current_key" "$count"
         fi
         current_key="$composite"
         count=$val
@@ -134,10 +156,11 @@ while IFS=$'\''\t'\'' read -r category key val; do
 done
 
 if [ -n "$current_key" ]; then
-    echo -e "${current_key}\t${count}"
+    printf "%s\t%s\n" "$current_key" "$count"
 fi
 REDUCER
-chmod +x /tmp/reducer.sh'
+chmod +x "$TMP_SCRIPTS/reducer.sh"
+docker cp "$TMP_SCRIPTS/reducer.sh" $NAMENODE:/tmp/reducer.sh
 ok "Reducer créé."
 
 # ─── Étape 6 : Lancer le job MapReduce ──────────────────────────────────────
@@ -452,6 +475,8 @@ echo -e "${GREEN}║   Appuyez sur Ctrl+C pour arrêter le serveur              
 echo -e "${GREEN}║                                                              ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
+
+rm -rf "$TMP_SCRIPTS"
 
 cd "$RESULTS_DIR"
 python3 -m http.server $DASHBOARD_PORT
