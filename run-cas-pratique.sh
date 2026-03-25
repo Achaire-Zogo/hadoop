@@ -115,21 +115,24 @@ echo ""
 # ─── Étape 4 : Créer le Mapper ──────────────────────────────────────────────
 info "Création du script Mapper..."
 cat > "$TMP_SCRIPTS/mapper.sh" << 'MAPPER'
-#!/bin/bash
-while read line; do
-    code=$(echo "$line" | awk '{print $9}')
-    page=$(echo "$line" | awk '{print $7}')
-    method=$(echo "$line" | awk '{print $6}' | tr -d '"')
-    size=$(echo "$line" | awk '{print $10}')
-    hour=$(echo "$line" | awk '{print $4}' | cut -d: -f2)
-    if [ -n "$code" ] && [ "$code" -eq "$code" ] 2>/dev/null; then
-        printf "CODE\t%s\t1\n" "$code"
-        printf "PAGE\t%s\t1\n" "$page"
-        printf "METHOD\t%s\t1\n" "$method"
-        printf "HOUR\t%s\t1\n" "$hour"
-        printf "SIZE\t%s\t%s\n" "$code" "$size"
-    fi
-done
+#!/usr/bin/awk -f
+BEGIN { OFS = "\t" }
+{
+    code = $8
+    page = $6
+    method = $5
+    gsub(/"/, "", method)
+    size = $9
+    split($4, timeparts, ":")
+    hour = timeparts[2]
+    if (code ~ /^[0-9]+$/) {
+        print "CODE", code, 1
+        print "PAGE", page, 1
+        print "METHOD", method, 1
+        print "HOUR", hour, 1
+        print "SIZE", code, size
+    }
+}
 MAPPER
 chmod +x "$TMP_SCRIPTS/mapper.sh"
 docker cp "$TMP_SCRIPTS/mapper.sh" $NAMENODE:/tmp/mapper.sh
@@ -138,26 +141,21 @@ ok "Mapper créé."
 # ─── Étape 5 : Créer le Reducer ─────────────────────────────────────────────
 info "Création du script Reducer..."
 cat > "$TMP_SCRIPTS/reducer.sh" << 'REDUCER'
-#!/bin/bash
-current_key=""
-count=0
-
-while IFS=$'\t' read -r category key val; do
-    composite="${category}\t${key}"
-    if [ "$composite" = "$current_key" ]; then
-        count=$((count + val))
-    else
-        if [ -n "$current_key" ]; then
-            printf "%s\t%s\n" "$current_key" "$count"
-        fi
-        current_key="$composite"
-        count=$val
-    fi
-done
-
-if [ -n "$current_key" ]; then
-    printf "%s\t%s\n" "$current_key" "$count"
-fi
+#!/usr/bin/awk -f
+BEGIN { FS = "\t"; OFS = "\t" }
+{
+    key = $1 OFS $2
+    if (key == prev_key) {
+        count += $3
+    } else {
+        if (prev_key != "") print prev_key, count
+        prev_key = key
+        count = $3
+    }
+}
+END {
+    if (prev_key != "") print prev_key, count
+}
 REDUCER
 chmod +x "$TMP_SCRIPTS/reducer.sh"
 docker cp "$TMP_SCRIPTS/reducer.sh" $NAMENODE:/tmp/reducer.sh
@@ -171,9 +169,10 @@ docker exec $NAMENODE hdfs dfs -rm -r -f /user/root/output/results 2>/dev/null |
 
 docker exec $NAMENODE hadoop jar \
     /opt/hadoop-3.2.1/share/hadoop/tools/lib/hadoop-streaming-3.2.1.jar \
+    -D stream.num.map.output.key.fields=2 \
     -files /tmp/mapper.sh,/tmp/reducer.sh \
-    -mapper /tmp/mapper.sh \
-    -reducer /tmp/reducer.sh \
+    -mapper "awk -f /tmp/mapper.sh" \
+    -reducer "awk -f /tmp/reducer.sh" \
     -input /user/root/input/access.log \
     -output /user/root/output/results
 
