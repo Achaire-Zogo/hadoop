@@ -30,7 +30,7 @@ docker compose version
 ### 1. Cloner le dépôt
 
 ```bash
-git clone https://github.com/<votre-utilisateur>/hadoop.git
+git clone https://github.com/Achaire-Zogo/hadoop.git
 cd hadoop
 ```
 
