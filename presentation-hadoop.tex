@@ -1,0 +1,789 @@
+\documentclass[aspectratio=169, 11pt]{beamer}
+
+% ─── Thème et couleurs ────────────────────────────────────────────────────────
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\definecolor{hadoopYellow}{RGB}{255, 205, 0}
+\definecolor{hadoopDark}{RGB}{30, 41, 59}
+\definecolor{hadoopBlue}{RGB}{59, 130, 246}
+\definecolor{hadoopGreen}{RGB}{34, 197, 94}
+\definecolor{hadoopRed}{RGB}{239, 68, 68}
+\definecolor{codeBg}{RGB}{241, 245, 249}
+
+\setbeamercolor{palette primary}{bg=hadoopDark, fg=white}
+\setbeamercolor{palette secondary}{bg=hadoopBlue, fg=white}
+\setbeamercolor{palette tertiary}{bg=hadoopBlue, fg=white}
+\setbeamercolor{title}{fg=hadoopDark}
+\setbeamercolor{frametitle}{fg=hadoopDark, bg=white}
+\setbeamercolor{block title}{bg=hadoopBlue, fg=white}
+\setbeamercolor{block body}{bg=codeBg}
+\setbeamercolor{block title alerted}{bg=hadoopRed, fg=white}
+\setbeamercolor{block title example}{bg=hadoopGreen, fg=white}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}{
+  \leavevmode\hbox{%
+    \begin{beamercolorbox}[wd=.33\paperwidth,ht=2.5ex,dp=1ex,center]{palette primary}
+      \usebeamerfont{author in head/foot}\insertshortauthor
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.34\paperwidth,ht=2.5ex,dp=1ex,center]{palette secondary}
+      \usebeamerfont{title in head/foot}\insertshorttitle
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.33\paperwidth,ht=2.5ex,dp=1ex,right]{palette primary}
+      \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}
+    \end{beamercolorbox}%
+  }
+}
+
+% ─── Packages ─────────────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{fontawesome5}
+
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, fit}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  backgroundcolor=\color{codeBg},
+  frame=single,
+  rulecolor=\color{hadoopBlue!30},
+  keywordstyle=\color{hadoopBlue}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{hadoopGreen!70!black},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  xleftmargin=1em,
+  framexleftmargin=0.5em,
+}
+
+% ─── Métadonnées ──────────────────────────────────────────────────────────────
+\title[Hadoop]{Apache Hadoop}
+\subtitle{Architecture, HDFS, MapReduce et cas pratique}
+\author{Présentation Technique}
+\date{\today}
+\institute{}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\begin{document}
+
+% ─── Page de titre ────────────────────────────────────────────────────────────
+\begin{frame}
+  \titlepage
+\end{frame}
+
+% ─── Sommaire ─────────────────────────────────────────────────────────────────
+\begin{frame}{Sommaire}
+  \tableofcontents
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Introduction à Hadoop}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Qu'est-ce que Hadoop ?}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \textbf{Apache Hadoop} est un framework open-source pour le
+      \textbf{stockage distribué} et le \textbf{traitement massif} de données.
+
+      \vspace{1em}
+      \begin{itemize}
+        \item Créé par \textbf{Doug Cutting} (2006, Yahoo!)
+        \item Inspiré des publications Google (GFS + MapReduce)
+        \item Conçu pour fonctionner sur du \textbf{matériel standard} (commodity hardware)
+        \item Gère des volumes de \textbf{pétaoctets}
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.4\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.8]
+        \node[draw, rounded corners, fill=hadoopYellow, minimum width=4cm, minimum height=1.2cm, font=\Large\bfseries] {Hadoop};
+      \end{tikzpicture}
+
+      \vspace{1em}
+      \small
+      \begin{tabular}{ll}
+        \faIcon{calendar} & 2006 -- aujourd'hui \\
+        \faIcon{code-branch} & Version 3.x \\
+        \faIcon{balance-scale} & Licence Apache 2.0 \\
+        \faIcon{java} & Écrit en Java \\
+      \end{tabular}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Pourquoi Hadoop ?}
+  \begin{alertblock}{Le problème}
+    Les données croissent exponentiellement : logs, capteurs IoT, réseaux sociaux, transactions\ldots
+    \\Un seul serveur ne peut plus tout stocker ni tout traiter.
+  \end{alertblock}
+
+  \vspace{0.5em}
+
+  \begin{exampleblock}{La solution Hadoop}
+    \begin{itemize}
+      \item \textbf{Scale-out} : ajouter des machines plutôt qu'en acheter une plus grosse
+      \item \textbf{Tolérance aux pannes} : les données sont répliquées automatiquement
+      \item \textbf{Coût réduit} : fonctionne sur du matériel standard
+      \item \textbf{Traitement local} : le calcul va vers les données (pas l'inverse)
+    \end{itemize}
+  \end{exampleblock}
+\end{frame}
+
+\begin{frame}{Les 3 piliers de Hadoop}
+  \centering
+  \begin{tikzpicture}[
+    pillar/.style={draw, rounded corners, minimum width=3.8cm, minimum height=2cm,
+                   align=center, font=\small},
+    arr/.style={-{Stealth}, thick, hadoopBlue}
+  ]
+    \node[pillar, fill=hadoopBlue!15] (hdfs) at (0,0)
+      {\textbf{\large HDFS}\\ Hadoop Distributed\\File System\\ \footnotesize\textit{Stockage}};
+    \node[pillar, fill=hadoopGreen!15] (yarn) at (5,0)
+      {\textbf{\large YARN}\\ Yet Another Resource\\Negotiator\\ \footnotesize\textit{Gestion des ressources}};
+    \node[pillar, fill=hadoopYellow!30] (mr) at (10,0)
+      {\textbf{\large MapReduce}\\ Modèle de\\programmation\\ \footnotesize\textit{Traitement}};
+
+    \draw[arr] (hdfs) -- (yarn);
+    \draw[arr] (yarn) -- (mr);
+
+    \node[below=0.3cm of hdfs, font=\scriptsize\color{gray}] {Où sont les données ?};
+    \node[below=0.3cm of yarn, font=\scriptsize\color{gray}] {Qui gère les tâches ?};
+    \node[below=0.3cm of mr, font=\scriptsize\color{gray}] {Comment traiter ?};
+  \end{tikzpicture}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Architecture HDFS}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{HDFS -- Principes}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \textbf{HDFS} = système de fichiers distribué.
+
+      \vspace{0.5em}
+      \begin{itemize}
+        \item Les fichiers sont découpés en \textbf{blocs} (128 Mo par défaut)
+        \item Chaque bloc est \textbf{répliqué 3 fois} sur des machines différentes
+        \item Optimisé pour la \textbf{lecture séquentielle} de gros fichiers
+        \item Modèle \textbf{write-once, read-many}
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.65, every node/.style={font=\scriptsize}]
+        \node[draw, fill=hadoopBlue!20, minimum width=3cm, rounded corners] (file) at (0,3) {Fichier (500 Mo)};
+
+        \node[draw, fill=hadoopYellow!40, minimum width=1.8cm] (b1) at (-2.5,1.5) {Bloc 1 (128 Mo)};
+        \node[draw, fill=hadoopYellow!40, minimum width=1.8cm] (b2) at (0,1.5) {Bloc 2 (128 Mo)};
+        \node[draw, fill=hadoopYellow!40, minimum width=1.8cm] (b3) at (2.5,1.5) {Bloc 3 (128 Mo)};
+        \node[draw, fill=hadoopYellow!40, minimum width=1.8cm] (b4) at (0,0.3) {Bloc 4 (116 Mo)};
+
+        \draw[-{Stealth}] (file) -- (b1);
+        \draw[-{Stealth}] (file) -- (b2);
+        \draw[-{Stealth}] (file) -- (b3);
+        \draw[-{Stealth}] (file) -- (b4);
+
+        \node[below=0.5cm of b4, font=\tiny\color{gray}, align=center] {Chaque bloc est répliqué\\3 fois sur des nœuds différents};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{HDFS -- Architecture NameNode / DataNode}
+  \centering
+  \begin{tikzpicture}[
+    node distance=1.2cm and 1.5cm,
+    box/.style={draw, rounded corners, minimum width=2.8cm, minimum height=1cm, align=center, font=\small},
+    arr/.style={-{Stealth}, thick}
+  ]
+    % Client
+    \node[box, fill=gray!15] (client) at (0, 3) {\faIcon{laptop} \textbf{Client}};
+
+    % NameNode
+    \node[box, fill=hadoopBlue!20] (nn) at (0, 1)
+      {\faIcon{brain} \textbf{NameNode}\\\scriptsize Métadonnées};
+
+    % DataNodes
+    \node[box, fill=hadoopGreen!15] (dn1) at (-4, -1.5)
+      {\faIcon{database} \textbf{DataNode 1}\\\scriptsize Blocs A, C};
+    \node[box, fill=hadoopGreen!15] (dn2) at (0, -1.5)
+      {\faIcon{database} \textbf{DataNode 2}\\\scriptsize Blocs A, B};
+    \node[box, fill=hadoopGreen!15] (dn3) at (4, -1.5)
+      {\faIcon{database} \textbf{DataNode 3}\\\scriptsize Blocs B, C};
+
+    % Flèches
+    \draw[arr, hadoopBlue] (client) -- node[right, font=\scriptsize] {1. Où est mon fichier ?} (nn);
+    \draw[arr, hadoopBlue, dashed] (nn) -- node[right, font=\scriptsize] {2. Blocs sur DN1, DN2, DN3} (client);
+    \draw[arr, hadoopGreen!70!black] (client.west) -| node[above left, font=\scriptsize, pos=0.3] {3. Lecture directe} (dn1.north);
+
+    % Heartbeats
+    \draw[arr, gray, dotted] (dn1.north) -- node[left, font=\tiny, pos=0.3] {heartbeat} (nn.south west);
+    \draw[arr, gray, dotted] (dn2.north) -- (nn.south);
+    \draw[arr, gray, dotted] (dn3.north) -- node[right, font=\tiny, pos=0.3] {heartbeat} (nn.south east);
+  \end{tikzpicture}
+\end{frame}
+
+\begin{frame}{Rôles dans HDFS}
+  \begin{table}
+    \centering
+    \begin{tabular}{lp{9cm}}
+      \toprule
+      \textbf{Composant} & \textbf{Rôle} \\
+      \midrule
+      \textbf{NameNode} & Serveur maître. Stocke les \textbf{métadonnées} : arborescence des fichiers, emplacement des blocs, permissions. Ne stocke \textbf{aucune donnée} réelle. \\
+      \addlinespace
+      \textbf{DataNode} & Serveur esclave. Stocke les \textbf{blocs de données} sur le disque local. Envoie un \textit{heartbeat} au NameNode toutes les 3 secondes. \\
+      \addlinespace
+      \textbf{Client} & Lit/écrit des fichiers via le NameNode (métadonnées) puis communique directement avec les DataNodes (données). \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Architecture YARN}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{YARN -- Gestion des ressources}
+  \centering
+  \begin{tikzpicture}[
+    node distance=1cm and 2cm,
+    box/.style={draw, rounded corners, minimum width=3cm, minimum height=0.9cm, align=center, font=\small},
+    arr/.style={-{Stealth}, thick}
+  ]
+    \node[box, fill=hadoopBlue!20] (rm) at (0, 2.5)
+      {\faIcon{server} \textbf{ResourceManager}\\\scriptsize Gestionnaire global};
+
+    \node[box, fill=hadoopGreen!15] (nm1) at (-4, 0)
+      {\faIcon{microchip} \textbf{NodeManager 1}\\\scriptsize CPU + RAM};
+    \node[box, fill=hadoopGreen!15] (nm2) at (0, 0)
+      {\faIcon{microchip} \textbf{NodeManager 2}\\\scriptsize CPU + RAM};
+    \node[box, fill=hadoopGreen!15] (nm3) at (4, 0)
+      {\faIcon{microchip} \textbf{NodeManager 3}\\\scriptsize CPU + RAM};
+
+    \node[box, fill=hadoopYellow!30] (am) at (0, -2)
+      {\faIcon{tasks} \textbf{ApplicationMaster}\\\scriptsize Gère 1 job};
+
+    \draw[arr] (rm) -- (nm1);
+    \draw[arr] (rm) -- (nm2);
+    \draw[arr] (rm) -- (nm3);
+    \draw[arr, dashed, hadoopBlue] (am) -- node[right, font=\scriptsize] {demande des conteneurs} (rm);
+    \draw[arr, hadoopGreen!70!black] (am) -- node[left, font=\scriptsize] {lance des tâches} (nm1);
+  \end{tikzpicture}
+
+  \vspace{0.5em}
+  \small
+  \textbf{ResourceManager} : alloue les ressources du cluster.\\
+  \textbf{NodeManager} : gère les ressources d'un nœud.\\
+  \textbf{ApplicationMaster} : coordonne l'exécution d'un job.
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Le modèle MapReduce}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{MapReduce -- Principe}
+  \centering
+  \begin{tikzpicture}[
+    phase/.style={draw, rounded corners, minimum width=2.5cm, minimum height=1.5cm,
+                  align=center, font=\small},
+    data/.style={font=\scriptsize\ttfamily, align=left},
+    arr/.style={-{Stealth}, thick, hadoopBlue}
+  ]
+    % Input
+    \node[phase, fill=gray!10] (input) at (0, 0) {\textbf{Données}\\\scriptsize fichier texte};
+
+    % Map
+    \node[phase, fill=hadoopBlue!15] (map) at (4, 0) {\textbf{MAP}\\\scriptsize transformer};
+
+    % Shuffle
+    \node[phase, fill=hadoopYellow!30] (shuffle) at (8, 0) {\textbf{SHUFFLE}\\\scriptsize trier + grouper};
+
+    % Reduce
+    \node[phase, fill=hadoopGreen!15] (reduce) at (12, 0) {\textbf{REDUCE}\\\scriptsize agréger};
+
+    \draw[arr] (input) -- (map);
+    \draw[arr] (map) -- (shuffle);
+    \draw[arr] (shuffle) -- (reduce);
+
+    % Annotations
+    \node[data, below=0.6cm of input] {ligne 1\\ligne 2\\ligne 3\\...};
+    \node[data, below=0.6cm of map] {clé1 → 1\\clé2 → 1\\clé1 → 1\\...};
+    \node[data, below=0.6cm of shuffle] {clé1 → [1, 1]\\clé2 → [1]\\...};
+    \node[data, below=0.6cm of reduce] {clé1 → 2\\clé2 → 1\\...};
+  \end{tikzpicture}
+\end{frame}
+
+\begin{frame}{MapReduce -- Les 3 phases en détail}
+  \begin{columns}[T]
+    \begin{column}{0.32\textwidth}
+      \begin{block}{\faIcon{expand-arrows-alt} Phase MAP}
+        \begin{itemize}
+          \item Lit les données \textbf{ligne par ligne}
+          \item Émet des paires \texttt{clé → valeur}
+          \item S'exécute en \textbf{parallèle} sur chaque nœud
+          \item Pas de communication entre mappers
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \begin{block}{\faIcon{sort-amount-down} Phase SHUFFLE}
+        \begin{itemize}
+          \item \textbf{Automatique} (faite par Hadoop)
+          \item Trie les paires par clé
+          \item Regroupe les valeurs par clé
+          \item Transfère les données entre nœuds
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \begin{block}{\faIcon{compress-arrows-alt} Phase REDUCE}
+        \begin{itemize}
+          \item Reçoit \texttt{clé → [val1, val2, ...]}
+          \item \textbf{Agrège} les valeurs (somme, max, moyenne\ldots)
+          \item Écrit le résultat final dans HDFS
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Architecture du cluster Docker}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Notre cluster -- docker-compose}
+  \centering
+  \begin{tikzpicture}[
+    cont/.style={draw, rounded corners, minimum width=3cm, minimum height=1.3cm,
+                 align=center, font=\small},
+    arr/.style={-{Stealth}, thick, gray}
+  ]
+    \node[cont, fill=hadoopBlue!15] (nn) at (0, 2)
+      {\faIcon{brain} \textbf{namenode}\\\scriptsize Port 9870 (Web UI)\\\scriptsize Port 8020 (IPC)};
+    \node[cont, fill=hadoopGreen!15] (dn) at (6, 2)
+      {\faIcon{database} \textbf{datanode}\\\scriptsize Stockage des blocs};
+    \node[cont, fill=hadoopYellow!30] (rm) at (0, -0.5)
+      {\faIcon{server} \textbf{resourcemanager}\\\scriptsize Port 8088 (Web UI)};
+    \node[cont, fill=hadoopRed!10] (nm) at (6, -0.5)
+      {\faIcon{microchip} \textbf{nodemanager}\\\scriptsize Exécution des tâches};
+
+    \draw[arr] (dn) -- node[above, font=\scriptsize] {hdfs://namenode:8020} (nn);
+    \draw[arr] (nm) -- node[above, font=\scriptsize] {YARN} (rm);
+    \draw[arr, dashed] (rm) -- node[left, font=\scriptsize] {dépend de} (nn);
+    \draw[arr, dashed] (nm) -- node[right, font=\scriptsize] {dépend de} (rm);
+
+    % Docker network
+    \node[draw, dashed, gray, rounded corners, fit=(nn)(dn)(rm)(nm),
+          inner sep=0.5cm, label={[font=\scriptsize\color{gray}]below:Réseau Docker : hadoop\_default}] {};
+  \end{tikzpicture}
+\end{frame}
+
+\begin{frame}[fragile]{docker-compose.yml}
+  \begin{lstlisting}[language=bash, basicstyle=\ttfamily\tiny]
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    environment:
+      - CLUSTER_NAME=test
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+    ports:
+      - "9870:9870"       # Interface web HDFS
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
+    ports:
+      - "8088:8088"       # Interface web YARN
+
+  nodemanager:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+  \end{lstlisting}
+
+  \vspace{0.3em}
+  \small
+  \faIcon{terminal} Lancer : \texttt{docker compose up -d} \quad|\quad
+  Arrêter : \texttt{docker compose down}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Cas pratique : Analyse de logs web}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Cas pratique -- Objectif}
+  \begin{block}{Scénario}
+    Un serveur web génère des milliers de lignes de logs d'accès.\\
+    On veut analyser ces logs pour extraire des statistiques.
+  \end{block}
+
+  \vspace{0.5em}
+
+  \textbf{Questions auxquelles répondre :}
+  \begin{enumerate}
+    \item Combien de requêtes par \textbf{code HTTP} ? (200, 404, 500\ldots)
+    \item Quelles sont les \textbf{pages les plus visitées} ?
+    \item Quelle est la répartition par \textbf{méthode HTTP} ? (GET, POST\ldots)
+    \item Comment le \textbf{trafic évolue-t-il par heure} ?
+  \end{enumerate}
+
+  \vspace{0.5em}
+
+  \begin{exampleblock}{Outils utilisés}
+    \textbf{HDFS} pour stocker les logs \quad + \quad \textbf{MapReduce} (Hadoop Streaming + awk) pour les analyser
+  \end{exampleblock}
+\end{frame}
+
+\begin{frame}[fragile]{Format des données}
+  Chaque ligne de log suit le format \textbf{Apache Combined Log} :
+
+  \vspace{0.3em}
+  \begin{lstlisting}[basicstyle=\ttfamily\tiny]
+192.168.1.10 - - [25/Mar/2026:10:00:01] "GET /index.html HTTP/1.1" 200 1024
+192.168.1.12 - - [25/Mar/2026:10:00:03] "GET /missing.html HTTP/1.1" 404 512
+192.168.1.15 - - [25/Mar/2026:10:00:07] "GET /api/data HTTP/1.1" 500 64
+  \end{lstlisting}
+
+  \vspace{0.5em}
+  \textbf{Décomposition des champs} (séparés par des espaces) :
+
+  \vspace{0.3em}
+  \centering
+  \begin{tabular}{clll}
+    \toprule
+    \textbf{Champ} & \textbf{Nom} & \textbf{Exemple} & \textbf{Usage} \\
+    \midrule
+    \texttt{\$1} & Adresse IP & 192.168.1.10 & -- \\
+    \texttt{\$4} & Date/Heure & [25/Mar/2026:10:00:01] & Trafic par heure \\
+    \texttt{\$5} & Méthode & "GET & Répartition GET/POST \\
+    \texttt{\$6} & Page & /index.html & Pages visitées \\
+    \texttt{\$8} & Code HTTP & 200 & Codes de réponse \\
+    \texttt{\$9} & Taille & 1024 & Volume transféré \\
+    \bottomrule
+  \end{tabular}
+\end{frame}
+
+\begin{frame}{Mécanisme -- Pipeline de traitement}
+  \centering
+  \begin{tikzpicture}[
+    step/.style={draw, rounded corners, minimum width=3cm, minimum height=1cm,
+                 align=center, font=\small},
+    arr/.style={-{Stealth}, very thick, hadoopBlue}
+  ]
+    \node[step, fill=gray!10] (gen) at (0, 3) {\faIcon{file-alt} \textbf{Générer les logs}\\\scriptsize 10 000 lignes};
+    \node[step, fill=hadoopBlue!15] (hdfs) at (0, 1.2) {\faIcon{upload} \textbf{Charger dans HDFS}\\\scriptsize \texttt{hdfs dfs -put}};
+    \node[step, fill=hadoopYellow!30] (map) at (-4, -0.6) {\faIcon{expand-arrows-alt} \textbf{MAP}\\\scriptsize Extraire champs};
+    \node[step, fill=orange!15] (shuf) at (0, -0.6) {\faIcon{sort-amount-down} \textbf{SHUFFLE}\\\scriptsize Trier par clé};
+    \node[step, fill=hadoopGreen!15] (red) at (4, -0.6) {\faIcon{compress-arrows-alt} \textbf{REDUCE}\\\scriptsize Agréger};
+    \node[step, fill=hadoopBlue!10] (out) at (0, -2.5) {\faIcon{chart-bar} \textbf{Résultat}\\\scriptsize Dashboard HTML};
+
+    \draw[arr] (gen) -- (hdfs);
+    \draw[arr] (hdfs.south) -- ++(0,-0.3) -| (map.north);
+    \draw[arr] (map) -- (shuf);
+    \draw[arr] (shuf) -- (red);
+    \draw[arr] (red.south) -- ++(0,-0.3) -| (out.north);
+  \end{tikzpicture}
+\end{frame}
+
+\begin{frame}[fragile]{Le Mapper (awk)}
+  Le mapper lit chaque ligne et émet des paires \texttt{clé<TAB>valeur} :
+
+  \begin{lstlisting}[language=awk]
+BEGIN { OFS = "\t" }
+{
+    code = $8             # Code HTTP (200, 404, 500...)
+    if (code ~ /^[0-9]+$/) {
+        print code, 1     # Emet : 200<TAB>1
+    }
+}
+  \end{lstlisting}
+
+  \vspace{0.3em}
+  \textbf{Entrée} (1 ligne de log) :
+  \begin{lstlisting}[basicstyle=\ttfamily\tiny]
+192.168.1.10 - - [25/Mar/2026:10:00:01] "GET /index.html HTTP/1.1" 200 1024
+  \end{lstlisting}
+
+  \textbf{Sortie} :
+  \begin{lstlisting}[basicstyle=\ttfamily\small]
+200     1
+  \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{Le Reducer (awk)}
+  Le reducer reçoit les paires \textbf{triées par clé} et additionne les compteurs :
+
+  \begin{lstlisting}[language=awk]
+BEGIN { FS = "\t"; OFS = "\t" }
+{
+    if ($1 == prev) {
+        count += $2       # Meme cle : accumuler
+    } else {
+        if (prev != "") print prev, count
+        prev = $1         # Nouvelle cle
+        count = $2
+    }
+}
+END { if (prev != "") print prev, count }
+  \end{lstlisting}
+
+  \vspace{0.3em}
+  \textbf{Entrée} (triée par Hadoop) :
+  \begin{lstlisting}[basicstyle=\ttfamily\small]
+200     1
+200     1
+200     1
+404     1
+404     1
+  \end{lstlisting}
+
+  \textbf{Sortie} :
+  \begin{lstlisting}[basicstyle=\ttfamily\small]
+200     3
+404     2
+  \end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{Lancement du job}
+  \begin{lstlisting}[language=bash, basicstyle=\ttfamily\scriptsize]
+hadoop jar hadoop-streaming-3.2.1.jar \
+    -D stream.num.map.output.key.fields=2 \
+    -files /tmp/mapper.awk,/tmp/reducer.awk \
+    -mapper  "awk -f /tmp/mapper.awk" \
+    -reducer "awk -f /tmp/reducer.awk" \
+    -input  /user/root/input/access.log \
+    -output /user/root/output/results
+  \end{lstlisting}
+
+  \vspace{0.5em}
+  \textbf{Ce que fait Hadoop :}
+  \begin{enumerate}
+    \item Découpe le fichier d'entrée en \textbf{splits}
+    \item Lance le \textbf{mapper} sur chaque split (en parallèle sur les DataNodes)
+    \item \textbf{Trie et regroupe} les paires clé-valeur (shuffle)
+    \item Lance le \textbf{reducer} pour agréger les résultats
+    \item Écrit le résultat dans HDFS (\texttt{part-00000})
+  \end{enumerate}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Résultats attendus}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Résultats -- Codes HTTP}
+  \begin{columns}[T]
+    \begin{column}{0.45\textwidth}
+      \begin{table}
+        \centering
+        \begin{tabular}{cr}
+          \toprule
+          \textbf{Code} & \textbf{Requêtes} \\
+          \midrule
+          \textcolor{hadoopGreen}{200 OK} & 5 846 \\
+          \textcolor{hadoopBlue}{301 Redirect} & 812 \\
+          \textcolor{orange}{403 Forbidden} & 841 \\
+          \textcolor{hadoopYellow!80!black}{404 Not Found} & 809 \\
+          \textcolor{hadoopRed}{500 Server Error} & 835 \\
+          \textcolor{hadoopRed!70}{502 Bad Gateway} & 857 \\
+          \midrule
+          \textbf{Total} & \textbf{10 000} \\
+          \bottomrule
+        \end{tabular}
+      \end{table}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \textbf{Interprétation :}
+      \begin{itemize}
+        \item \textasciitilde58\% de succès (200)
+        \item \textasciitilde17\% d'erreurs serveur (5xx)
+        \item \textasciitilde8\% de pages non trouvées (404)
+        \item \textasciitilde8\% d'accès refusés (403)
+      \end{itemize}
+
+      \vspace{0.5em}
+      \begin{alertblock}{\scriptsize Action}
+        Les erreurs 500/502 sont élevées $\rightarrow$ investiguer les endpoints \texttt{/api/crash} et \texttt{/api/timeout}.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Résultats -- Pages et méthodes}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Top 5 des pages les plus visitées :}
+      \vspace{0.3em}
+      \begin{table}
+        \centering
+        \begin{tabular}{lr}
+          \toprule
+          \textbf{Page} & \textbf{Hits} \\
+          \midrule
+          /login & 439 \\
+          /deprecated & 431 \\
+          /search & 423 \\
+          /api/timeout & 418 \\
+          /blog/post-2 & 416 \\
+          \bottomrule
+        \end{tabular}
+      \end{table}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Répartition par méthode HTTP :}
+      \vspace{0.3em}
+      \begin{table}
+        \centering
+        \begin{tabular}{lr}
+          \toprule
+          \textbf{Méthode} & \textbf{Requêtes} \\
+          \midrule
+          GET & 5 757 (57,6\%) \\
+          POST & 1 438 (14,4\%) \\
+          PUT & 1 412 (14,1\%) \\
+          DELETE & 1 393 (13,9\%) \\
+          \bottomrule
+        \end{tabular}
+      \end{table}
+
+      \vspace{0.3em}
+      \small
+      \faIcon{info-circle} Le trafic est à majorité GET (lecture).
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Résultats -- Trafic par heure}
+  \centering
+  \begin{tikzpicture}[xscale=0.55, yscale=0.035]
+    \draw[gray!30, thin] (0,0) grid[xstep=1, ystep=100] (24, 500);
+    \draw[-{Stealth}] (0,0) -- (25,0) node[right, font=\scriptsize] {Heure};
+    \draw[-{Stealth}] (0,0) -- (0,520) node[above, font=\scriptsize] {Requêtes};
+
+    % Y axis labels
+    \foreach \y in {0, 100, 200, 300, 400, 500} {
+      \draw (-0.3, \y) node[left, font=\tiny] {\y};
+    }
+    % X axis labels
+    \foreach \x in {0,2,...,22} {
+      \draw (\x+0.5, -15) node[font=\tiny] {\x h};
+    }
+
+    % Bars
+    \foreach \x/\val in {
+      0/379, 1/420, 2/423, 3/402, 4/426, 5/438,
+      6/432, 7/427, 8/398, 9/392, 10/404, 11/422,
+      12/392, 13/398, 14/460, 15/474, 16/444, 17/419,
+      18/393, 19/450, 20/380, 21/414, 22/415, 23/398} {
+      \fill[hadoopBlue!70] (\x+0.1, 0) rectangle (\x+0.9, \val);
+    }
+
+    % Average line
+    \draw[hadoopRed, thick, dashed] (0, 417) -- (24, 417) node[right, font=\tiny] {moy. 417};
+  \end{tikzpicture}
+
+  \vspace{0.5em}
+  \small
+  Trafic réparti sur 24h. Pic à \textbf{15h} (474 req.) -- creux à \textbf{0h} (379 req.).
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Dashboard et monitoring}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Interfaces de monitoring}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{\faIcon{hdd} HDFS -- \texttt{localhost:9870}}
+        \begin{itemize}
+          \item État du cluster
+          \item Capacité et utilisation
+          \item Datanodes actifs
+          \item Navigateur de fichiers HDFS
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{\faIcon{tasks} YARN -- \texttt{localhost:8088}}
+        \begin{itemize}
+          \item Liste des applications
+          \item Statut des jobs (SUCCEEDED, FAILED)
+          \item Nombre de mappers / reducers
+          \item Temps d'exécution et logs
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+
+  \vspace{1em}
+
+  \begin{exampleblock}{\faIcon{chart-bar} Dashboard généré -- \texttt{localhost:8888}}
+    Le script \texttt{run-cas-pratique.sh} génère automatiquement un dashboard HTML interactif
+    avec des graphiques Chart.js : doughnut (codes), barres (heures, pages), pie (méthodes).
+  \end{exampleblock}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Ce qu'on retient}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Hadoop permet de :}
+      \begin{itemize}
+        \item Stocker des données massives de manière distribuée (\textbf{HDFS})
+        \item Traiter ces données en parallèle (\textbf{MapReduce})
+        \item Gérer les ressources d'un cluster (\textbf{YARN})
+        \item Tolérer les pannes automatiquement
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Dans notre cas pratique :}
+      \begin{itemize}
+        \item 10 000 logs analysés en quelques minutes
+        \item 4 dimensions extraites (codes, pages, méthodes, heures)
+        \item Pipeline reproductible : un seul script
+        \item Résultats visualisables dans le navigateur
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{1em}
+  \centering
+  \begin{tikzpicture}
+    \node[draw, rounded corners, fill=hadoopBlue!10, minimum width=12cm, minimum height=1.2cm, align=center] {
+      \textbf{Commande unique :} \texttt{bash run-cas-pratique.sh}
+      \quad $\rightarrow$ \quad Données $\rightarrow$ HDFS $\rightarrow$ MapReduce $\rightarrow$ Dashboard
+    };
+  \end{tikzpicture}
+\end{frame}
+
+\begin{frame}{}
+  \centering
+  \vspace{2cm}
+  {\Huge\bfseries Merci !}
+
+  \vspace{1.5em}
+  {\large Questions ?}
+
+  \vspace{2em}
+  \small
+  \begin{tabular}{cl}
+    \faIcon{github} & \texttt{github.com/Achaire-Zogo/hadoop} \\
+    \faIcon{globe} & Dashboard : \texttt{http://localhost:8888/dashboard.html} \\
+    \faIcon{terminal} & \texttt{bash run-cas-pratique.sh} \\
+  \end{tabular}
+\end{frame}
+
+\end{document}

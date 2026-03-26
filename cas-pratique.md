@@ -1,68 +1,72 @@
-# Cas Pratique : Analyse de logs web avec Hadoop (HDFS + MapReduce)
+# Cas Pratique : Analyse de logs web avec Hadoop
 
-Ce guide vous accompagne pas à pas dans un cas d'utilisation réel de Hadoop :
-**analyser des logs d'accès d'un serveur web** pour compter le nombre de visites par code HTTP (200, 404, 500…).
+## Objectif
+
+Analyser des **logs d'accès d'un serveur web** avec un cluster Hadoop Docker pour :
+
+- Compter les requêtes par **code HTTP** (200, 301, 404, 500…)
+- Identifier les **pages les plus visitées**
+- Répartir le trafic par **méthode HTTP** et par **heure**
+
+> **Prérequis** : le cluster doit être démarré (`docker compose up -d`).
+> Consultez le fichier `README.md` pour l'installation.
 
 ---
 
-## Étape 1 — Se connecter au conteneur namenode
+## Partie 1 — Prise en main de HDFS
 
-Toutes les commandes HDFS s'exécutent depuis le namenode :
+### 1.1 — Se connecter au namenode
+
+Toutes les commandes HDFS s'exécutent depuis le conteneur **namenode** :
 
 ```bash
 docker exec -it namenode bash
 ```
 
----
-
-## Étape 2 — Vérifier l'état du cluster HDFS
+### 1.2 — Vérifier l'état du cluster
 
 ```bash
 hdfs dfsadmin -report
 ```
 
-### Résultat attendu
+**Résultat attendu :**
 
 ```
-Configured Capacity: ...
-DFS Used: ...
-DFS Remaining: ...
+Configured Capacity: 51221196800 (47.71 GB)
+DFS Used: 4096 (4 KB)
+DFS Remaining: 42697302016 (39.77 GB)
+...
 Live datanodes (1):
 
 Name: 172.x.x.x:9866 (datanode.hadoop_default)
-...
 ```
 
-> Vous devez voir **1 Live datanode**. Si c'est 0, le datanode n'est pas encore prêt (attendez quelques secondes).
+> Vous devez voir **1 Live datanode**. Si c'est 0, patientez ~30 secondes que le datanode s'enregistre.
 
----
-
-## Étape 3 — Créer la structure de répertoires dans HDFS
+### 1.3 — Créer des répertoires
 
 ```bash
 hdfs dfs -mkdir -p /user/root/input
 hdfs dfs -mkdir -p /user/root/output
 ```
 
-### Vérification
+**Vérification :**
 
 ```bash
 hdfs dfs -ls /user/root/
 ```
 
-### Résultat attendu
-
 ```
 Found 2 items
-drwxr-xr-x   - root supergroup          0 2026-03-25 04:50 /user/root/input
-drwxr-xr-x   - root supergroup          0 2026-03-25 04:50 /user/root/output
+drwxr-xr-x   - root supergroup   0 ...  /user/root/input
+drwxr-xr-x   - root supergroup   0 ...  /user/root/output
 ```
 
 ---
 
-## Étape 4 — Créer un fichier de données (logs web simulés)
+## Partie 2 — Charger des données dans HDFS
 
-On génère un fichier de logs directement dans le conteneur :
+### 2.1 — Créer un fichier de logs simulés
 
 ```bash
 cat > /tmp/access.log << 'EOF'
@@ -81,77 +85,76 @@ cat > /tmp/access.log << 'EOF'
 EOF
 ```
 
----
+Chaque ligne suit le format **Apache Combined Log** :
 
-## Étape 5 — Charger le fichier dans HDFS
+```
+IP - - [DATE:HEURE] "MÉTHODE PAGE PROTOCOLE" CODE TAILLE
+$1  $2 $3 $4        $5       $6   $7         $8   $9
+```
+
+> Les champs `$1` à `$9` sont séparés par des espaces. Le **code HTTP** est en `$8` et la **taille** en `$9`.
+
+### 2.2 — Envoyer le fichier dans HDFS
 
 ```bash
 hdfs dfs -put /tmp/access.log /user/root/input/
 ```
 
-### Vérification
+**Vérification :**
 
 ```bash
 hdfs dfs -ls /user/root/input/
 ```
 
-### Résultat attendu
-
 ```
 Found 1 items
--rw-r--r--   3 root supergroup        756 2026-03-25 04:51 /user/root/input/access.log
+-rw-r--r--   3 root supergroup   756 ...  /user/root/input/access.log
 ```
 
-### Lire le contenu du fichier dans HDFS
+### 2.3 — Lire le fichier depuis HDFS
 
 ```bash
 hdfs dfs -cat /user/root/input/access.log
 ```
 
-> Vous devez voir les 12 lignes de logs.
+> Les 12 lignes de logs doivent s'afficher.
 
 ---
 
-## Étape 6 — Manipulations HDFS courantes
+## Partie 3 — Manipulations HDFS courantes
 
-### 6.1 — Copier un fichier dans HDFS
+### 3.1 — Copier un fichier
 
 ```bash
 hdfs dfs -cp /user/root/input/access.log /user/root/input/access_backup.log
 ```
 
-### 6.2 — Voir la taille des fichiers
+### 3.2 — Voir la taille des fichiers
 
 ```bash
 hdfs dfs -du -h /user/root/input/
 ```
-
-### Résultat attendu
 
 ```
 756  2.2 K  /user/root/input/access.log
 756  2.2 K  /user/root/input/access_backup.log
 ```
 
-### 6.3 — Compter les lignes du fichier
+### 3.3 — Compter les lignes
 
 ```bash
 hdfs dfs -cat /user/root/input/access.log | wc -l
 ```
 
-### Résultat attendu
-
 ```
 12
 ```
 
-### 6.4 — Supprimer un fichier
+### 3.4 — Supprimer un fichier
 
 ```bash
 hdfs dfs -rm /user/root/input/access_backup.log
 ```
-
-### Résultat attendu
 
 ```
 Deleted /user/root/input/access_backup.log
@@ -159,63 +162,83 @@ Deleted /user/root/input/access_backup.log
 
 ---
 
-## Étape 7 — Exécuter un job MapReduce (Hadoop Streaming)
+## Partie 4 — Job MapReduce avec Hadoop Streaming
 
-On utilise **Hadoop Streaming** pour lancer un job MapReduce avec des scripts shell simples.
+**Hadoop Streaming** permet d'écrire des jobs MapReduce dans n'importe quel langage
+(shell, Python, awk…). Le principe :
 
-### 7.1 — Créer le script Mapper
+1. Le **Mapper** lit chaque ligne en entrée et émet des paires `clé<TAB>valeur`
+2. Hadoop **trie** automatiquement les paires par clé
+3. Le **Reducer** reçoit les paires triées et agrège les valeurs par clé
+
+### 4.1 — Créer le Mapper (awk)
+
+Le mapper extrait le code HTTP (champ `$8`) de chaque ligne de log :
 
 ```bash
-cat > /tmp/mapper.sh << 'MAPPER'
-#!/bin/bash
-# Mapper : extrait le code HTTP de chaque ligne de log
-while read line; do
-    # Le code HTTP est le 9e champ (séparé par des espaces)
-    code=$(echo "$line" | awk '{print $9}')
-    if [ -n "$code" ]; then
-        echo -e "${code}\t1"
-    fi
-done
+cat > /tmp/mapper.awk << 'MAPPER'
+BEGIN { OFS = "\t" }
+{
+    code = $8
+    if (code ~ /^[0-9]+$/) {
+        print code, 1
+    }
+}
 MAPPER
-chmod +x /tmp/mapper.sh
 ```
 
-### 7.2 — Créer le script Reducer
+**Test local :**
 
 ```bash
-cat > /tmp/reducer.sh << 'REDUCER'
-#!/bin/bash
-# Reducer : additionne les occurrences de chaque code HTTP
-current_code=""
-count=0
+awk -f /tmp/mapper.awk /tmp/access.log
+```
 
-while IFS=$'\t' read -r code val; do
-    if [ "$code" = "$current_code" ]; then
-        count=$((count + val))
-    else
-        if [ -n "$current_code" ]; then
-            echo -e "${current_code}\t${count}"
-        fi
-        current_code="$code"
-        count=$val
-    fi
-done
+```
+200	1
+200	1
+404	1
+200	1
+200	1
+403	1
+500	1
+200	1
+404	1
+200	1
+500	1
+200	1
+```
 
-# Dernière clé
-if [ -n "$current_code" ]; then
-    echo -e "${current_code}\t${count}"
-fi
+> Chaque ligne de log produit une paire `CODE<TAB>1`.
+
+### 4.2 — Créer le Reducer (awk)
+
+Le reducer reçoit les paires triées par Hadoop et additionne les compteurs :
+
+```bash
+cat > /tmp/reducer.awk << 'REDUCER'
+BEGIN { FS = "\t"; OFS = "\t" }
+{
+    if ($1 == prev) {
+        count += $2
+    } else {
+        if (prev != "") print prev, count
+        prev = $1
+        count = $2
+    }
+}
+END {
+    if (prev != "") print prev, count
+}
 REDUCER
-chmod +x /tmp/reducer.sh
 ```
 
-### 7.3 — Tester localement (sans Hadoop)
+### 4.3 — Tester le pipeline complet en local
 
 ```bash
-cat /tmp/access.log | /tmp/mapper.sh | sort | /tmp/reducer.sh
+awk -f /tmp/mapper.awk /tmp/access.log | sort | awk -f /tmp/reducer.awk
 ```
 
-### Résultat attendu
+**Résultat attendu :**
 
 ```
 200	6
@@ -224,42 +247,34 @@ cat /tmp/access.log | /tmp/mapper.sh | sort | /tmp/reducer.sh
 500	2
 ```
 
-> **6** requêtes 200 OK, **1** requête 403 Forbidden, **2** requêtes 404 Not Found, **2** requêtes 500 Internal Server Error.
+> **6** requêtes `200 OK`, **1** requête `403 Forbidden`, **2** requêtes `404 Not Found`, **2** requêtes `500 Internal Server Error`.
 
-### 7.4 — Supprimer le dossier output s'il existe
-
-```bash
-hdfs dfs -rm -r /user/root/output
-```
-
-### 7.5 — Lancer le job MapReduce
+### 4.4 — Lancer le job sur le cluster Hadoop
 
 ```bash
+hdfs dfs -rm -r -f /user/root/output/http-codes
+
 hadoop jar /opt/hadoop-3.2.1/share/hadoop/tools/lib/hadoop-streaming-3.2.1.jar \
-    -files /tmp/mapper.sh,/tmp/reducer.sh \
-    -mapper /tmp/mapper.sh \
-    -reducer /tmp/reducer.sh \
+    -files /tmp/mapper.awk,/tmp/reducer.awk \
+    -mapper "awk -f /tmp/mapper.awk" \
+    -reducer "awk -f /tmp/reducer.awk" \
     -input /user/root/input/access.log \
     -output /user/root/output/http-codes
 ```
 
-### Résultat attendu (logs du job)
+**Résultat attendu dans les logs :**
 
 ```
-...
-INFO mapreduce.Job: Running job: job_xxxx
-INFO mapreduce.Job: Job job_xxxx completed successfully
+INFO mapreduce.Job: Running job: job_local...
 INFO mapreduce.Job:  map 100% reduce 100%
-...
+INFO mapreduce.Job: Job job_local... completed successfully
 ```
 
-### 7.6 — Lire le résultat du job
+### 4.5 — Lire les résultats du job
 
 ```bash
 hdfs dfs -cat /user/root/output/http-codes/part-00000
 ```
-
-### Résultat attendu
 
 ```
 200	6
@@ -270,26 +285,24 @@ hdfs dfs -cat /user/root/output/http-codes/part-00000
 
 ---
 
-## Étape 8 — Exploration des résultats
+## Partie 5 — Explorer les résultats
 
-### 8.1 — Lister les fichiers de sortie
+### 5.1 — Lister les fichiers de sortie
 
 ```bash
 hdfs dfs -ls /user/root/output/http-codes/
 ```
 
-### Résultat attendu
-
 ```
 Found 2 items
--rw-r--r--   3 root supergroup          0 2026-03-25 ... /user/root/output/http-codes/_SUCCESS
--rw-r--r--   3 root supergroup         24 2026-03-25 ... /user/root/output/http-codes/part-00000
+-rw-r--r--   3 root supergroup    0 ...  /user/root/output/http-codes/_SUCCESS
+-rw-r--r--   3 root supergroup   24 ...  /user/root/output/http-codes/part-00000
 ```
 
-> `_SUCCESS` confirme que le job s'est terminé correctement.
-> `part-00000` contient les résultats.
+- `_SUCCESS` : confirme que le job s'est terminé correctement
+- `part-00000` : contient les résultats agrégés
 
-### 8.2 — Récupérer les résultats en local
+### 5.2 — Récupérer les résultats en local
 
 ```bash
 hdfs dfs -get /user/root/output/http-codes/part-00000 /tmp/resultats.txt
@@ -298,55 +311,78 @@ cat /tmp/resultats.txt
 
 ---
 
-## Étape 9 — Monitorer via les interfaces web
+## Partie 6 — Interfaces de monitoring web
 
-### HDFS NameNode (http://localhost:9870)
+### HDFS NameNode — http://localhost:9870
 
-- Onglet **Overview** : état du cluster, capacité, datanodes actifs
-- Onglet **Utilities > Browse the file system** : naviguer dans HDFS
-  - Aller dans `/user/root/input/` pour voir `access.log`
-  - Aller dans `/user/root/output/http-codes/` pour voir les résultats
+| Onglet                             | Ce qu'on y voit                                |
+|------------------------------------|------------------------------------------------|
+| **Overview**                       | État du cluster, capacité, datanodes actifs     |
+| **Utilities > Browse the file system** | Naviguer dans HDFS, voir les fichiers      |
 
-### YARN ResourceManager (http://localhost:8088)
+> Naviguez vers `/user/root/input/` et `/user/root/output/http-codes/` pour voir vos données.
 
-- Voir la liste des **applications** (votre job MapReduce)
-- Cliquer sur l'application pour voir :
-  - Le statut (**SUCCEEDED**)
-  - Le nombre de mappers et reducers
-  - Le temps d'exécution
-  - Les logs d'exécution
+### YARN ResourceManager — http://localhost:8088
+
+| Section                            | Ce qu'on y voit                                |
+|------------------------------------|------------------------------------------------|
+| **Applications**                   | Liste des jobs MapReduce exécutés              |
+| **Détail d'une application**       | Statut, nombre de mappers/reducers, durée, logs|
 
 ---
 
-## Étape 10 — Nettoyage
+## Partie 7 — Exécution automatisée (script batch)
+
+Pour aller plus loin avec **10 000 lignes de logs** et un **dashboard visuel** dans le navigateur :
 
 ```bash
-# Supprimer les données dans HDFS
+# Depuis la machine hôte (pas dans le conteneur)
+bash run-cas-pratique.sh
+```
+
+Ce script automatise toutes les étapes :
+1. Vérifie que le cluster est actif
+2. Génère 10 000 lignes de logs simulés (codes 200/301/403/404/500/502)
+3. Charge les données dans HDFS
+4. Exécute un job MapReduce multi-dimensions (codes, pages, méthodes, heures, tailles)
+5. Génère un **dashboard HTML interactif** avec des graphiques (Chart.js)
+6. Lance un serveur web local sur http://localhost:8888/dashboard.html
+
+---
+
+## Partie 8 — Nettoyage
+
+```bash
+# Dans le conteneur namenode
 hdfs dfs -rm -r /user/root/input
 hdfs dfs -rm -r /user/root/output
-
-# Quitter le conteneur
 exit
 
-# Arrêter le cluster (depuis la machine hôte)
+# Depuis la machine hôte
 docker compose down
+```
+
+Pour supprimer aussi les **volumes** (données HDFS persistées) :
+
+```bash
+docker compose down -v
 ```
 
 ---
 
-## Récapitulatif des commandes HDFS essentielles
+## Récapitulatif des commandes HDFS
 
-| Commande                              | Description                          |
-|---------------------------------------|--------------------------------------|
-| `hdfs dfs -ls <path>`                | Lister les fichiers                  |
-| `hdfs dfs -mkdir -p <path>`          | Créer un répertoire                  |
-| `hdfs dfs -put <local> <hdfs>`       | Envoyer un fichier vers HDFS         |
-| `hdfs dfs -get <hdfs> <local>`       | Télécharger un fichier depuis HDFS   |
-| `hdfs dfs -cat <path>`              | Afficher le contenu d'un fichier     |
-| `hdfs dfs -cp <src> <dst>`          | Copier un fichier dans HDFS          |
-| `hdfs dfs -mv <src> <dst>`          | Déplacer/renommer un fichier         |
-| `hdfs dfs -rm <path>`               | Supprimer un fichier                 |
-| `hdfs dfs -rm -r <path>`            | Supprimer un répertoire              |
-| `hdfs dfs -du -h <path>`            | Taille des fichiers                  |
-| `hdfs dfs -chmod <mode> <path>`     | Changer les permissions              |
-| `hdfs dfsadmin -report`             | Rapport d'état du cluster            |
+| Commande                          | Description                           |
+|-----------------------------------|---------------------------------------|
+| `hdfs dfs -ls <path>`            | Lister les fichiers                   |
+| `hdfs dfs -mkdir -p <path>`      | Créer un répertoire                   |
+| `hdfs dfs -put <local> <hdfs>`   | Envoyer un fichier vers HDFS          |
+| `hdfs dfs -get <hdfs> <local>`   | Télécharger un fichier depuis HDFS    |
+| `hdfs dfs -cat <path>`           | Afficher le contenu d'un fichier      |
+| `hdfs dfs -cp <src> <dst>`       | Copier un fichier dans HDFS           |
+| `hdfs dfs -mv <src> <dst>`       | Déplacer / renommer un fichier        |
+| `hdfs dfs -rm <path>`            | Supprimer un fichier                  |
+| `hdfs dfs -rm -r <path>`         | Supprimer un répertoire               |
+| `hdfs dfs -du -h <path>`         | Taille des fichiers                   |
+| `hdfs dfs -chmod <mode> <path>`  | Changer les permissions               |
+| `hdfs dfsadmin -report`          | Rapport d'état du cluster             |
