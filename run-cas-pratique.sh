@@ -116,21 +116,35 @@ echo ""
 info "Création du script Mapper..."
 cat > "$TMP_SCRIPTS/mapper.sh" << 'MAPPER'
 #!/usr/bin/awk -f
+# Ce script est le Mapper du job MapReduce.
+# Il lit chaque ligne de log Apache et émet 5 paires clé-valeur par ligne.
+#
+# Format d'une ligne de log (champs séparés par des espaces) :
+#   $1=IP  $2="-"  $3="-"  $4=[date:heure]  $5="MÉTHODE  $6=/page  $7=HTTP/1.1"  $8=CODE  $9=TAILLE
+#
+# Pour chaque ligne valide, le mapper émet :
+#   CODE    <code_http>     1         → pour compter les requêtes par code (200, 404, 500…)
+#   PAGE    <url>           1         → pour compter les requêtes par page visitée
+#   METHOD  <méthode>       1         → pour compter GET, POST, PUT, DELETE
+#   HOUR    <heure>         1         → pour compter le trafic par heure (00-23)
+#   SIZE    <code_http>     <taille>  → pour calculer le volume transféré par code
+#
+# Le séparateur de sortie est une tabulation (\t), requis par Hadoop Streaming.
 BEGIN { OFS = "\t" }
 {
-    code = $8
-    page = $6
-    method = $5
-    gsub(/"/, "", method)
-    size = $9
-    split($4, timeparts, ":")
-    hour = timeparts[2]
-    if (code ~ /^[0-9]+$/) {
-        print "CODE", code, 1
-        print "PAGE", page, 1
-        print "METHOD", method, 1
-        print "HOUR", hour, 1
-        print "SIZE", code, size
+    code = $8                        # Code HTTP (ex: 200, 404, 500)
+    page = $6                        # Page demandée (ex: /index.html)
+    method = $5                      # Méthode HTTP avec guillemet (ex: "GET)
+    gsub(/"/, "", method)            # Supprime le guillemet → GET
+    size = $9                        # Taille de la réponse en octets
+    split($4, timeparts, ":")        # Découpe "[25/Mar/2026:10:30:00]" par ":"
+    hour = timeparts[2]              # Extrait l'heure (ex: 10)
+    if (code ~ /^[0-9]+$/) {        # Vérifie que le code est bien numérique
+        print "CODE", code, 1        # Émet 1 occurrence pour ce code HTTP
+        print "PAGE", page, 1        # Émet 1 occurrence pour cette page
+        print "METHOD", method, 1    # Émet 1 occurrence pour cette méthode
+        print "HOUR", hour, 1        # Émet 1 occurrence pour cette heure
+        print "SIZE", code, size     # Émet la taille associée à ce code
     }
 }
 MAPPER
@@ -142,6 +156,9 @@ ok "Mapper créé."
 info "Création du script Reducer..."
 cat > "$TMP_SCRIPTS/reducer.sh" << 'REDUCER'
 #!/usr/bin/awk -f
+# Ce script agrège les résultats du Mapper en sommant les valeurs pour chaque clé unique
+# Format d'entrée : TYPE\tVALEUR\tCOMPTE (ex: CODE\t200\t1)
+# Format de sortie : TYPE\tVALEUR\tTOTAL (ex: CODE\t200\t1523)
 BEGIN { FS = "\t"; OFS = "\t" }
 {
     key = $1 OFS $2
